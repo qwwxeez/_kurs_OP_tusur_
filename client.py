@@ -3,6 +3,19 @@ import re
 
 API_URL = "http://localhost:8000"
 
+def handle_error(response):
+    print(f"\nОшибка (код {response.status_code}):")
+
+    try:
+        data = response.json()
+        if "detail" in data:
+            print(data["detail"])
+        else:
+            print(data)
+    except ValueError:
+        print(response.text)
+
+
 def is_password_strong(password: str) -> bool:
     if len(password) < 10:
         print("Пароль должен содержать не менее 10 символов.")
@@ -40,15 +53,18 @@ def register():
 
     user = {"login": login, "email": email, "password": password}
 
-    response = requests.post(f"{API_URL}/users/regist", json=user)
-
+    try:
+        response = requests.post(f"{API_URL}/users/regist", json=user)
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
 
     if response.status_code == 200:
         data = response.json()
         print("Регистрация успешна.")
         print("Токен:", data["token"])
     else:
-        print("Ошибка", response.text)
+        handle_error(response)
 
 
 def auth():
@@ -58,14 +74,18 @@ def auth():
 
     params = {"login": login, "password": password}
 
-    response = requests.post(f"{API_URL}/users/auth", json=params)
+    try:
+        response = requests.post(f"{API_URL}/users/auth", json=params)
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
 
     if response.status_code == 200:
         data = response.json()
         print("Авторизация успешна.")
         print("Токен:", data["token"])
     else:
-        print("Ошибка", response.text)
+        handle_error(response)
 
 
 def main_menu():
