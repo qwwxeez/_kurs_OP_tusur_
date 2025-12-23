@@ -28,6 +28,28 @@ class AuthResponse(BaseModel):
     token: str
 
 
+def signature_variant_1(request: Request):
+    """Проверка подписи вариант 1: только токен"""
+    auth_header = request.headers.get("Authorization")
+    if not auth_header:
+        raise HTTPException(status_code=401, detail="Отсутствует заголовок Authorization")
+    
+    token = auth_header.strip() 
+    
+    os.makedirs("users", exist_ok=True)
+    for file in os.listdir("users"):
+        if file.endswith(".json"):
+            try:
+                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if data.get("token") == token:
+                        return True  
+            except json.JSONDecodeError:
+                continue
+    
+    raise HTTPException(status_code=401, detail="Неверный токен")
+
+
 @app.post("/users/regist")
 def create_user(user: User):
     os.makedirs("users", exist_ok=True)
@@ -75,3 +97,11 @@ def auth_user(params: AuthUser):
                 )
 
     raise HTTPException(status_code=401, detail="Неверный логин или пароль")
+
+
+@app.get("/users/{user_id}")
+def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
+    signature_variant_1(request)
+    
+    sum = q + a
+    return {"user_id": user_id, "q": q, "a": a, "sum": sum}

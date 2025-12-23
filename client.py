@@ -3,6 +3,9 @@ import re
 
 API_URL = "http://localhost:8000"
 
+current_token = None
+
+
 def handle_error(response):
     print(f"\nОшибка (код {response.status_code}):")
 
@@ -35,7 +38,12 @@ def is_password_strong(password: str) -> bool:
     return True
 
 
+def signature_variant_1(token):
+    return {"Authorization": token} 
+
+
 def register():
+    global current_token
     print("\n=== Регистрация ===")
     login = input("Логин: ")
     email = input("Email: ")
@@ -61,13 +69,15 @@ def register():
 
     if response.status_code == 200:
         data = response.json()
+        current_token = data["token"] 
         print("Регистрация успешна.")
-        print("Токен:", data["token"])
+        print("Токен:", current_token)
     else:
         handle_error(response)
 
 
 def auth():
+    global current_token
     print("\n=== Авторизация ===")
     login = input("Логин: ")
     password = input("Пароль: ")
@@ -82,8 +92,51 @@ def auth():
 
     if response.status_code == 200:
         data = response.json()
+        current_token = data["token"]  
         print("Авторизация успешна.")
-        print("Токен:", data["token"])
+        print("Токен:", current_token)
+    else:
+        handle_error(response)
+
+
+def protected_request():
+    global current_token
+    
+    if not current_token:
+        print("Сначала выполните авторизацию или регистрацию!")
+        return
+    
+    print("\n=== Защищенный запрос ===")
+    try:
+        user_id = int(input("ID пользователя: "))
+    except ValueError:
+        print("Некорректный ID")
+        return
+    
+    q = input()
+    a = input()
+    
+    params = {}
+    if q:
+        params["q"] = int(q)
+    if a:
+        params["a"] = int(a)
+    
+    headers = signature_variant_1(current_token)
+    
+    try:
+        response = requests.get(f"{API_URL}/users/{user_id}", params=params, headers=headers)
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(f"\nРезультат запроса:")
+        print(f"ID: {data['user_id']}")
+        print(f"q: {data['q']}")
+        print(f"a: {data['a']}")
+        print(f"Сумма: {data['sum']}")
     else:
         handle_error(response)
 
@@ -93,7 +146,11 @@ def main_menu():
         print("\n=== Главное меню ===")
         print("1 - Регистрация")
         print("2 - Авторизация")
+        print("3 - Защищенный запрос (с подписью)")
         print("0 - Выход")
+        
+        if current_token:
+            print(f"Текущий токен: {current_token[:20]}...")
 
         choice = input("Ваш выбор: ")
 
@@ -101,6 +158,8 @@ def main_menu():
             register()
         elif choice == "2":
             auth()
+        elif choice == "3":
+            protected_request()
         elif choice == "0":
             break
         else:
