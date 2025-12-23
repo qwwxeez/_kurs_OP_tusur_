@@ -5,6 +5,7 @@ import json
 import time
 import random
 import os
+import hashlib
 
 app = FastAPI()
 
@@ -28,26 +29,45 @@ class AuthResponse(BaseModel):
     token: str
 
 
-def signature_variant_1(request: Request):
-    """Проверка подписи вариант 1: только токен"""
+# Второй вариант подписи: хэш от токена и времени
+def signature_variant_2(request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Отсутствует заголовок Authorization")
+
+    if ":" not in auth_header:
+        raise HTTPException(status_code=401, detail="Неверный формат подписи")
+
+    signature_hash, sent_timestamp = auth_header.split(":", 1)
     
-    token = auth_header.strip() 
-    
+    try:
+        sent_time = int(sent_timestamp)
+        current_time = int(time.time())
+        
+        # Проверяем, что время не устарело (180 сек)
+        if abs(current_time - sent_time) > 180:  
+            raise HTTPException(status_code=401, detail="Время подписи устарело")
+            
+    except ValueError:
+        raise HTTPException(status_code=401, detail="Неверный формат времени")
+
+    # Ищем пользователя, чей токен дает нужный хэш
     os.makedirs("users", exist_ok=True)
     for file in os.listdir("users"):
         if file.endswith(".json"):
             try:
                 with open(f"users/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if data.get("token") == token:
-                        return True  
+                    user_token = data.get("token")
+                    if user_token:
+                        # Проверяем хэш
+                        expected_hash = hashlib.sha256(f"{user_token}{sent_timestamp}".encode()).hexdigest()
+                        if expected_hash == signature_hash:
+                            return True
             except json.JSONDecodeError:
                 continue
-    
-    raise HTTPException(status_code=401, detail="Неверный токен")
+
+    raise HTTPException(status_code=401, detail="Неверная подпись")
 
 
 @app.post("/users/regist")
@@ -101,7 +121,7 @@ def auth_user(params: AuthUser):
 
 @app.get("/users/{user_id}")
 def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
-    signature_variant_1(request)
-    
+    signature_variant_2(request)
+
     sum = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": sum}
