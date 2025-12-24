@@ -29,29 +29,24 @@ class AuthResponse(BaseModel):
     token: str
 
 
-# Второй вариант подписи: хэш от токена и времени
-def signature_variant_2(request: Request):
+# Вариант 3: хэш от токена и тела запроса
+def signature_variant_3(request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Отсутствует заголовок Authorization")
 
-    if ":" not in auth_header:
-        raise HTTPException(status_code=401, detail="Неверный формат подписи")
-
-    signature_hash, sent_timestamp = auth_header.split(":", 1)
+    signature_hash = auth_header.strip()
     
-    try:
-        sent_time = int(sent_timestamp)
-        current_time = int(time.time())
-        
-        # Проверяем, что время не устарело (180 сек)
-        if abs(current_time - sent_time) > 180:  
-            raise HTTPException(status_code=401, detail="Время подписи устарело")
-            
-    except ValueError:
-        raise HTTPException(status_code=401, detail="Неверный формат времени")
-
-    # Ищем пользователя, чей токен дает нужный хэш
+    query_params = {}
+    if request.query_params:
+        for key, value in request.query_params.items():
+            try:
+                query_params[key] = int(value) if value.isdigit() else value
+            except:
+                query_params[key] = value
+    
+    params_str = json.dumps(query_params, sort_keys=True) if query_params else ""
+    
     os.makedirs("users", exist_ok=True)
     for file in os.listdir("users"):
         if file.endswith(".json"):
@@ -61,7 +56,7 @@ def signature_variant_2(request: Request):
                     user_token = data.get("token")
                     if user_token:
                         # Проверяем хэш
-                        expected_hash = hashlib.sha256(f"{user_token}{sent_timestamp}".encode()).hexdigest()
+                        expected_hash = hashlib.sha256(f"{user_token}{params_str}".encode()).hexdigest()
                         if expected_hash == signature_hash:
                             return True
             except json.JSONDecodeError:
@@ -121,7 +116,7 @@ def auth_user(params: AuthUser):
 
 @app.get("/users/{user_id}")
 def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
-    signature_variant_2(request)
+    signature_variant_3(request)
 
     sum = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": sum}

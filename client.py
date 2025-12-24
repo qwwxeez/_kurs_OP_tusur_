@@ -2,6 +2,7 @@ import requests
 import re
 import hashlib
 import time
+import json
 
 API_URL = "http://localhost:8000"
 
@@ -50,25 +51,20 @@ def signature_variant_2(token):
     return {"Authorization": f"{signature_hash}:{current_time}"}
 
 
+# Вариант 3: хэш от токена и тела запроса
+def signature_variant_3(token, request_body=None):
+    if request_body is None:
+        request_body = {}
+    
+    sorted_body = json.dumps(request_body, sort_keys=True) if request_body else ""
+    signature_hash = hashlib.sha256(f"{token}{sorted_body}".encode()).hexdigest()
+    return {"Authorization": f"{signature_hash}"}
+
+
 def make_request_with_retry(user_id, params):
     global current_token
-    
-    # Первая попытка
-    headers = signature_variant_2(current_token)
+    headers = signature_variant_3(current_token, params)
     response = requests.get(f"{API_URL}/users/{user_id}", params=params, headers=headers)
-    
-    # Если подпись устарела, пробуем еще раз с новым временем
-    if response.status_code == 401:
-        try:
-            error_detail = response.json().get("detail", "")
-            if "Время подписи устарело" in error_detail.lower() or "time" in error_detail.lower():
-                print("Подпись устарела, создаем новую...")
-                # Создаем новую подпись с актуальным временем
-                headers = signature_variant_2(current_token)
-                response = requests.get(f"{API_URL}/users/{user_id}", params=params, headers=headers)
-        except:
-            pass
-    
     return response
 
 
