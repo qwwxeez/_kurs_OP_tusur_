@@ -6,6 +6,7 @@ import time
 import random
 import os
 import hashlib
+import re
 
 app = FastAPI()
 
@@ -27,6 +28,31 @@ class AuthUser(BaseModel):
 class AuthResponse(BaseModel):
     login: str
     token: str
+
+
+class ChangePasswordRequest(BaseModel):
+    old_password: str
+    new_password: str
+    token: str
+
+
+class ChangePasswordResponse(BaseModel):
+    message: str
+    token: str
+
+
+def validate_password(password: str):
+    if len(password) < 10:
+        raise HTTPException(status_code=400, detail="Пароль должен содержать не менее 10 символов")
+    if not re.search(r"[A-Z]", password):
+        raise HTTPException(status_code=400, detail="Пароль должен содержать хотя бы одну заглавную букву")
+    if not re.search(r"[a-z]", password):
+        raise HTTPException(status_code=400, detail="Пароль должен содержать хотя бы одну строчную букву")
+    if not re.search(r"[0-9]", password):
+        raise HTTPException(status_code=400, detail="Пароль должен содержать хотя бы одну цифру")
+    if not re.search(r"[!@#$%^&*()\-_=+\[\]{};:,./?]", password):
+        raise HTTPException(status_code=400, detail="Пароль должен содержать хотя бы один спецсимвол")
+    return True
 
 
 # Вариант 4: хэш от токена, тела запроса и времени
@@ -141,3 +167,55 @@ def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, re
 
     sum = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": sum}
+
+
+@app.patch("/users/change-password")
+def change_password(request: ChangePasswordRequest):
+    user_found = None
+    user_file = None
+    
+    os.makedirs("users", exist_ok=True)
+    for file in os.listdir("users"):
+        if file.endswith(".json"):
+            try:
+                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                    data = json.load(f)
+                    if data.get("token") == request.token:
+                        user_found = data
+                        user_file = file
+                        break
+            except json.JSONDecodeError:
+                continue
+    
+    if not user_found:
+        raise HTTPException(status_code=401, detail="Неверный токен")
+    
+    if user_found["password"] != request.old_password:
+        raise HTTPException(status_code=400, detail="Неверный текущий пароль")
+    
+    if request.old_password == request.new_password:
+        raise HTTPException(status_code=400, detail="Новый пароль должен отличаться от старого")
+    
+    try:
+        validate_password(request.new_password)
+    except HTTPException as e:
+        raise e
+    
+    # Генерируем новый токен
+    new_token = str(random.getrandbits(128))
+    
+    # Обновляем данные
+    user_found["password"] = request.new_password
+    user_found["token"] = new_token
+    
+    # Сохраняем 
+    try:
+        with open(f"users/{user_file}", "w", encoding="utf-8") as f:
+            json.dump(user_found, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения данных: {str(e)}")
+    
+    return ChangePasswordResponse(
+        message="Пароль успешно изменен",
+        token=new_token
+    )

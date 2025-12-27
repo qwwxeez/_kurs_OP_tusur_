@@ -46,7 +46,7 @@ def is_password_strong(password: str) -> bool:
 def create_session_token(token):
     timestamp = str(int(time.time()))
     session_hash = hashlib.sha256(f"{token}:{timestamp}".encode()).hexdigest()
-    return f"session_{session_hash}"
+    return session_hash
 
 
 def signature_variant_1(token):
@@ -187,12 +187,61 @@ def protected_request():
         handle_error(response)
 
 
+def change_password():
+    global current_token, session_token
+    
+    if not current_token:
+        print("Сначала выполните авторизацию!")
+        return
+    
+    print("\n=== Изменение пароля ===")
+    
+    while True:
+        old_password = input("Текущий пароль: ")
+        
+        new_password = input("Новый пароль: ")
+        if not is_password_strong(new_password):
+            continue
+        
+        confirm_password = input("Подтвердите новый пароль: ")
+        if new_password != confirm_password:
+            print("Новые пароли не совпадают. Попробуйте снова.")
+            continue
+        
+        password_data = {
+            "old_password": old_password,
+            "new_password": new_password,
+            "token": current_token  
+        }
+        
+        try:
+            response = requests.patch(
+                f"{API_URL}/users/change-password",
+                json=password_data
+            )
+        except requests.exceptions.RequestException as e:
+            print("Ошибка подключения:", e)
+            return
+        
+        if response.status_code == 200:
+            data = response.json()
+            current_token = data["token"]  # технический токен
+            session_token = create_session_token(current_token)  # сессионный токен
+            print("Пароль успешно изменен!")
+            print(f"Новый технический токен: {current_token[:20]}...")
+            print(f"Новый сессионный токен: {session_token[:30]}...")
+        else:
+            handle_error(response)
+        break
+
+
 def main_menu():
     while True:
         print("\n=== Главное меню ===")
         print("1 - Регистрация")
         print("2 - Авторизация")
         print("3 - Защищенный запрос")
+        print("4 - Изменить пароль")
         print("0 - Выход")
 
         if current_token:
@@ -208,6 +257,8 @@ def main_menu():
             auth()
         elif choice == "3":
             protected_request()
+        elif choice == "4":
+            change_password()
         elif choice == "0":
             break
         else:
