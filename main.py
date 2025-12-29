@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
-from typing import Union, Optional
+from typing import Union, Optional, List
 from pydantic import BaseModel
 import json
 import time
@@ -41,6 +41,18 @@ class ChangePasswordResponse(BaseModel):
     token: str
 
 
+class KMPSearchRequest(BaseModel):
+    text: str
+    pattern: str
+
+
+class KMPSearchResponse(BaseModel):
+    text: str
+    pattern: str
+    positions: List[int]
+    count: int
+
+
 def validate_password(password: str):
     if len(password) < 10:
         raise HTTPException(status_code=400, detail="Пароль должен содержать не менее 10 символов")
@@ -55,8 +67,7 @@ def validate_password(password: str):
     return True
 
 
-# Вариант 4: хэш от токена, тела запроса и времени
-def signature_variant_4(request: Request):
+async def signature_variant_4(request: Request):
     auth_header = request.headers.get("Authorization")
     if not auth_header:
         raise HTTPException(status_code=401, detail="Отсутствует заголовок Authorization")
@@ -76,15 +87,18 @@ def signature_variant_4(request: Request):
     except ValueError:
         raise HTTPException(status_code=401, detail="Неверный формат времени")
 
-    query_params = {}
-    if request.query_params:
-        for key, value in request.query_params.items():
-            try:
-                query_params[key] = int(value) if value.isdigit() else value
-            except:
-                query_params[key] = value
+    data_for_hash = ""
     
-    params_str = json.dumps(query_params, sort_keys=True) if query_params else ""
+    if request.method == "GET":
+        data_for_hash = ""
+    
+    elif request.method in ["POST", "PATCH", "PUT"]:
+        try:
+            body = await request.json()
+            data_for_hash = json.dumps(body, sort_keys=True)
+        except:
+            data_for_hash = ""
+    
     
     os.makedirs("users", exist_ok=True)
     for file in os.listdir("users"):
@@ -94,22 +108,52 @@ def signature_variant_4(request: Request):
                     data = json.load(f)
                     user_token = data.get("token")
                     if user_token:
-                        current_time = int(time.time())
-                        for hours_ago in range(0, 25):  # 0-24 часа назад
-                            timestamp = current_time - (hours_ago * 3600)
-                            
-                            possible_session_token = f"session_{hashlib.sha256(f'{user_token}:{timestamp}'.encode()).hexdigest()}"
-                            
-                            expected_hash = hashlib.sha256(
-                                f"{possible_session_token}{params_str}{sent_timestamp}".encode()
-                            ).hexdigest()
-                            
-                            if expected_hash == signature_hash:
-                                return True
+                        expected_hash = hashlib.sha256(f"{user_token}{data_for_hash}{sent_timestamp}".encode()).hexdigest()
+                        if expected_hash == signature_hash:
+                            return True
             except json.JSONDecodeError:
                 continue
 
     raise HTTPException(status_code=401, detail="Неверная подпись")
+
+
+def prefix_function(pattern: str) -> List[int]:
+    m = len(pattern)
+    pi = [0] * m
+    k = 0
+    for i in range(1, m):
+        while k > 0 and pattern[k] != pattern[i]:
+            k = pi[k - 1]
+        if pattern[k] == pattern[i]:
+            k += 1
+        pi[i] = k
+    return pi
+
+
+def kmp_search_all(text: str, pattern: str) -> List[int]:
+    if not pattern:
+        return [0] 
+    
+    n = len(text)
+    m = len(pattern)
+    
+    if m > n:
+        return []
+    
+    pi = prefix_function(pattern)
+    positions = []  
+    j = 0  
+    
+    for i in range(n):
+        while j > 0 and text[i] != pattern[j]:
+            j = pi[j - 1]
+        if text[i] == pattern[j]:
+            j += 1
+        if j == m:
+            positions.append(i - m + 1)  
+            j = pi[m - 1]  
+    
+    return positions
 
 
 @app.post("/users/regist")
@@ -162,15 +206,17 @@ def auth_user(params: AuthUser):
 
 
 @app.get("/users/{user_id}")
-def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
-    signature_variant_4(request)
+async def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
+    await signature_variant_4(request)
 
     sum = q + a
     return {"user_id": user_id, "q": q, "a": a, "sum": sum}
 
 
 @app.patch("/users/change-password")
-def change_password(request: ChangePasswordRequest):
+async def change_password(request: ChangePasswordRequest, req: Request = None):
+    await signature_variant_4(req)
+
     user_found = None
     user_file = None
     
@@ -218,4 +264,17 @@ def change_password(request: ChangePasswordRequest):
     return ChangePasswordResponse(
         message="Пароль успешно изменен",
         token=new_token
+    )
+
+
+@app.post("/kmp/search")
+async def kmp_search(request_data: KMPSearchRequest, req: Request = None):
+    await signature_variant_4(req)
+    
+    positions = kmp_search_all(request_data.text, request_data.pattern)
+    return KMPSearchResponse(
+        text=request_data.text,
+        pattern=request_data.pattern,
+        positions=positions,
+        count=len(positions)
     )

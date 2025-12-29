@@ -63,26 +63,35 @@ def signature_variant_3(token, request_body=None):
     if request_body is None:
         request_body = {}
     
-    sorted_body = json.dumps(request_body, sort_keys=True) if request_body else ""
-    signature_hash = hashlib.sha256(f"{token}{sorted_body}".encode()).hexdigest()
+    if not request_body:
+        body_str = ""
+    else:
+        body_str = json.dumps(request_body, sort_keys=True)
+    
+    signature_hash = hashlib.sha256(f"{token}{body_str}".encode()).hexdigest()
     return {"Authorization": f"{signature_hash}"}
 
 
-def signature_variant_4(token, request_body=None):
-    if request_body is None:
-        request_body = {}
+def signature_variant_4(token, request_data=None):
+    if request_data is None:
+        request_data = {}
     
     current_time = str(int(time.time()))
-    sorted_body = json.dumps(request_body, sort_keys=True) if request_body else ""
     
-    signature_hash = hashlib.sha256(f"{token}{sorted_body}{current_time}".encode()).hexdigest()
+    data_str = json.dumps(request_data, sort_keys=True) if request_data else ""
+    
+    signature_hash = hashlib.sha256(f"{token}{data_str}{current_time}".encode()).hexdigest()
     return {"Authorization": f"{signature_hash}:{current_time}"}
 
 
 def make_request(user_id, params):
-    global session_token
+    global current_token
     
-    headers = signature_variant_4(session_token, params)
+    if not current_token:
+        print("Сначала выполните авторизацию или регистрацию!")
+        return None
+    
+    headers = signature_variant_4(current_token, {})
     response = requests.get(f"{API_URL}/users/{user_id}", params=params, headers=headers)
     return response
 
@@ -141,6 +150,7 @@ def auth():
         data = response.json()
         current_token = data["token"]  
         session_token = create_session_token(current_token) 
+        print("Авторизация успешна.")
         print(f"Технический токен: {current_token[:20]}...")
         print(f"Сессионный токен: {session_token[:30]}...")
     else:
@@ -148,9 +158,9 @@ def auth():
 
 
 def protected_request():
-    global session_token
+    global current_token
 
-    if not session_token:
+    if not current_token:
         print("Сначала выполните авторизацию или регистрацию!")
         return
 
@@ -214,10 +224,13 @@ def change_password():
             "token": current_token  
         }
         
+        headers = signature_variant_4(current_token, password_data)
+        
         try:
             response = requests.patch(
                 f"{API_URL}/users/change-password",
-                json=password_data
+                json=password_data,
+                headers=headers
             )
         except requests.exceptions.RequestException as e:
             print("Ошибка подключения:", e)
@@ -235,6 +248,49 @@ def change_password():
         break
 
 
+def kmp_search():
+    global current_token
+    
+    if not current_token:
+        print("Сначала выполните авторизацию или регистрацию!")
+        return
+    
+    print("\n=== Поиск КМП ===")
+    text = input("Введите строку для поиска: ")
+    pattern = input("Введите подстроку для поиска: ")
+    
+    request_data = {
+        "text": text,
+        "pattern": pattern
+    }
+    
+    headers = signature_variant_4(current_token, request_data)
+    
+    try:
+        response = requests.post(
+            f"{API_URL}/kmp/search",
+            json=request_data,
+            headers=headers
+        )
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
+    
+    if response.status_code == 200:
+        data = response.json()
+        positions = data["positions"]
+        if positions:
+            print(f"\nРезультат поиска:")
+            print(f"Текст: {data['text']}")
+            print(f"Образец: {data['pattern']}")
+            print(f"Позиции вхождения: {positions}")
+            print(f"Всего найдено: {data['count']}")
+        else:
+            print("Образец не найден в тексте")
+    else:
+        handle_error(response)
+
+
 def main_menu():
     while True:
         print("\n=== Главное меню ===")
@@ -242,6 +298,7 @@ def main_menu():
         print("2 - Авторизация")
         print("3 - Защищенный запрос")
         print("4 - Изменить пароль")
+        print("5 - Поиск КМП (POST)")
         print("0 - Выход")
 
         if current_token:
@@ -259,6 +316,8 @@ def main_menu():
             protected_request()
         elif choice == "4":
             change_password()
+        elif choice == "5":
+            kmp_search()
         elif choice == "0":
             break
         else:
