@@ -157,45 +157,6 @@ def auth():
         handle_error(response)
 
 
-def protected_request():
-    global current_token
-
-    if not current_token:
-        print("Сначала выполните авторизацию или регистрацию!")
-        return
-
-    print("\n=== Защищенный запрос (вариант 4 подписи) ===")
-    try:
-        user_id = int(input("ID пользователя: "))
-    except ValueError:
-        print("Некорректный ID")
-        return
-
-    q = input("Параметр q:")
-    a = input("Параметр a:")
-
-    params = {}
-    if q:
-        params["q"] = int(q)
-    if a:
-        params["a"] = int(a)
-
-    try:
-        response = make_request(user_id, params)
-    except requests.exceptions.RequestException as e:
-        print("Ошибка подключения:", e)
-        return
-
-    if response.status_code == 200:
-        data = response.json()
-        print(f"\nРезультат запроса:")
-        print(f"ID: {data['user_id']}")
-        print(f"q: {data['q']}")
-        print(f"a: {data['a']}")
-        print(f"Сумма: {data['sum']}")
-    else:
-        handle_error(response)
-
 
 def change_password():
     global current_token, session_token
@@ -291,14 +252,100 @@ def kmp_search():
         handle_error(response)
 
 
+def get_history():
+    global current_token
+    
+    if not current_token:
+        print("Сначала выполните авторизацию!")
+        return
+    
+    print("\n=== История запросов ===")
+    
+    headers = signature_variant_4(current_token, {})
+    
+    try:
+        response = requests.get(
+            f"{API_URL}/users/history",
+            headers=headers
+        )
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
+    
+    if response.status_code == 200:
+        data = response.json()
+        history = data["history"]
+        count = data["count"]
+        
+        print(f"\nИстория запросов пользователя '{data.get('login', 'Unknown')}' (всего: {count}):")
+        print("-" * 60)
+        
+        if history:
+            for i, entry in enumerate(reversed(history), 1):
+                print(f"{i}. Время: {entry['timestamp']}")
+                print(f"   Метод: {entry['method']}")
+                print(f"   Эндпоинт: {entry['endpoint']}")
+                
+                if entry.get('data'):
+                    data_summary = str(entry['data'])
+                    if len(data_summary) > 50:
+                        data_summary = data_summary[:47] + "..."
+                    print(f"   Данные: {data_summary}")
+                
+                if entry.get('result'):
+                    result_summary = str(entry['result'])
+                    if len(result_summary) > 50:
+                        result_summary = result_summary[:47] + "..."
+                    print(f"   Результат: {result_summary}")
+                
+                print("-" * 60)
+        else:
+            print("История пуста")
+    else:
+        handle_error(response)
+
+
+def clear_history():
+    global current_token
+    
+    if not current_token:
+        print("Сначала выполните авторизацию!")
+        return
+    
+    print("\n=== Очистка истории запросов ===")
+    
+    confirm = input("Вы уверены, что хотите очистить историю запросов? (да/нет): ")
+    if confirm.lower() != 'да':
+        print("Отмена операции")
+        return
+    
+    headers = signature_variant_4(current_token, {})
+    
+    try:
+        response = requests.delete(
+            f"{API_URL}/users/history",
+            headers=headers
+        )
+    except requests.exceptions.RequestException as e:
+        print("Ошибка подключения:", e)
+        return
+    
+    if response.status_code == 200:
+        data = response.json()
+        print(f"\n{data['message']}")
+    else:
+        handle_error(response)
+
+
 def main_menu():
     while True:
         print("\n=== Главное меню ===")
         print("1 - Регистрация")
         print("2 - Авторизация")
-        print("3 - Защищенный запрос")
-        print("4 - Изменить пароль")
-        print("5 - Поиск КМП (POST)")
+        print("3 - Изменить пароль")
+        print("4 - Поиск КМП (POST)")
+        print("5 - Получить историю запросов")
+        print("6 - Очистить историю запросов")
         print("0 - Выход")
 
         if current_token:
@@ -313,11 +360,13 @@ def main_menu():
         elif choice == "2":
             auth()
         elif choice == "3":
-            protected_request()
-        elif choice == "4":
             change_password()
-        elif choice == "5":
+        elif choice == "4":
             kmp_search()
+        elif choice == "5":
+            get_history()
+        elif choice == "6":
+            clear_history()
         elif choice == "0":
             break
         else:

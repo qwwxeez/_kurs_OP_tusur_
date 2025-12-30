@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
-from typing import Union, Optional, List
+from typing import Union, Optional, List, Dict
 from pydantic import BaseModel
 import json
 import time
@@ -7,8 +7,17 @@ import random
 import os
 import hashlib
 import re
+from datetime import datetime
+from collections import defaultdict
 
 app = FastAPI()
+
+# Директории для хранения данных
+USERS_DIR = "users"
+HISTORY_DIR = "user_history"
+
+# Хранилище истории
+user_history: Dict[int, List[Dict]] = defaultdict(list)
 
 
 class User(BaseModel):
@@ -53,6 +62,21 @@ class KMPSearchResponse(BaseModel):
     count: int
 
 
+class HistoryEntry(BaseModel):
+    timestamp: str
+    endpoint: str
+    method: str
+    data: Optional[dict] = None
+    result: Optional[dict] = None
+
+
+class HistoryResponse(BaseModel):
+    user_id: int
+    login: Optional[str] = None
+    history: List[HistoryEntry]
+    count: int
+
+
 def validate_password(password: str):
     if len(password) < 10:
         raise HTTPException(status_code=400, detail="Пароль должен содержать не менее 10 символов")
@@ -65,6 +89,75 @@ def validate_password(password: str):
     if not re.search(r"[!@#$%^&*()\-_=+\[\]{};:,./?]", password):
         raise HTTPException(status_code=400, detail="Пароль должен содержать хотя бы один спецсимвол")
     return True
+
+
+def add_to_history(user_id: int, endpoint: str, method: str, data: dict = None, result: dict = None):
+    history_entry = {
+        "timestamp": datetime.now().isoformat(),
+        "endpoint": endpoint,
+        "method": method,
+        "data": data,
+        "result": result
+    }
+    
+    user_history[user_id].append(history_entry)
+    
+    if len(user_history[user_id]) > 100:
+        user_history[user_id] = user_history[user_id][-100:]
+    
+    os.makedirs(HISTORY_DIR, exist_ok=True)
+    history_file = f"{HISTORY_DIR}/history_{user_id}.json"
+    
+    file_history = []
+    if os.path.exists(history_file):
+        try:
+            with open(history_file, "r", encoding="utf-8") as f:
+                file_history = json.load(f)
+        except:
+            file_history = []
+    
+    file_history.append(history_entry)
+    
+    if len(file_history) > 100:
+        file_history = file_history[-100:]
+    
+    with open(history_file, "w", encoding="utf-8") as f:
+        json.dump(file_history, f, ensure_ascii=False, indent=2)
+    
+    return history_entry
+
+
+def get_user_history(user_id: int):
+    if user_id in user_history and user_history[user_id]:
+        return user_history[user_id]
+    
+    history_file = f"{HISTORY_DIR}/history_{user_id}.json"
+    
+    if not os.path.exists(history_file):
+        return []
+    
+    try:
+        with open(history_file, "r", encoding="utf-8") as f:
+            file_history = json.load(f)
+            if isinstance(file_history, list):
+                user_history[user_id] = file_history
+                return file_history
+            else:
+                return []
+    except Exception:
+        return []
+
+
+def clear_user_history(user_id: int):
+    if user_id in user_history:
+        user_history[user_id] = []
+    
+    history_file = f"{HISTORY_DIR}/history_{user_id}.json"
+    
+    if os.path.exists(history_file):
+        os.remove(history_file)
+        return True
+    return False
 
 
 async def signature_variant_4(request: Request):
@@ -92,24 +185,24 @@ async def signature_variant_4(request: Request):
     if request.method == "GET":
         data_for_hash = ""
     
-    elif request.method in ["POST", "PATCH", "PUT"]:
+    elif request.method in ["POST", "PATCH", "PUT", "DELETE"]:
         try:
             body = await request.json()
             data_for_hash = json.dumps(body, sort_keys=True)
         except:
             data_for_hash = ""
     
-    
-    os.makedirs("users", exist_ok=True)
-    for file in os.listdir("users"):
+    os.makedirs(USERS_DIR, exist_ok=True)
+    for file in os.listdir(USERS_DIR):
         if file.endswith(".json"):
             try:
-                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
                     user_token = data.get("token")
                     if user_token:
                         expected_hash = hashlib.sha256(f"{user_token}{data_for_hash}{sent_timestamp}".encode()).hexdigest()
                         if expected_hash == signature_hash:
+                            request.state.user_data = data
                             return True
             except json.JSONDecodeError:
                 continue
@@ -158,12 +251,12 @@ def kmp_search_all(text: str, pattern: str) -> List[int]:
 
 @app.post("/users/regist")
 def create_user(user: User):
-    os.makedirs("users", exist_ok=True)
+    os.makedirs(USERS_DIR, exist_ok=True)
 
-    for file in os.listdir("users"):
+    for file in os.listdir(USERS_DIR):
         if file.endswith(".json"):
             try:
-                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if data["login"] == user.login:
                         raise HTTPException(
@@ -179,22 +272,29 @@ def create_user(user: User):
     user.id = int(time.time())
     user.token = str(random.getrandbits(128))
 
-    with open(f"users/user_{user.id}.json", "w", encoding="utf-8") as f:
+    with open(f"{USERS_DIR}/user_{user.id}.json", "w", encoding="utf-8") as f:
         json.dump(user.dict(), f, ensure_ascii=False)
+
+    add_to_history(user.id, "/users/regist", "POST", 
+                   data={"login": user.login, "email": user.email},
+                   result={"status": "success", "token_created": True})
 
     return AuthResponse(login=user.login, token=user.token)
 
 
 @app.post("/users/auth")
 def auth_user(params: AuthUser):
-    os.makedirs("users", exist_ok=True)
+    os.makedirs(USERS_DIR, exist_ok=True)
 
-    for file in os.listdir("users"):
+    for file in os.listdir(USERS_DIR):
         if file.endswith(".json"):
             try:
-                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if data["login"] == params.login and data["password"] == params.password:
+                        add_to_history(data["id"], "/users/auth", "POST",
+                                     data={"login": params.login},
+                                     result={"status": "success", "auth": True})
                         return AuthResponse(login=data["login"], token=data["token"])
             except json.JSONDecodeError:
                 raise HTTPException(
@@ -205,26 +305,20 @@ def auth_user(params: AuthUser):
     raise HTTPException(status_code=401, detail="Неверный логин или пароль")
 
 
-@app.get("/users/{user_id}")
-async def user_read(user_id: int, q: Union[int, None] = 0, a: Union[int, None] = 0, request: Request = None):
-    await signature_variant_4(request)
-
-    sum = q + a
-    return {"user_id": user_id, "q": q, "a": a, "sum": sum}
-
-
 @app.patch("/users/change-password")
 async def change_password(request: ChangePasswordRequest, req: Request = None):
     await signature_variant_4(req)
-
+    
+    user_data = req.state.user_data
+    
     user_found = None
     user_file = None
     
-    os.makedirs("users", exist_ok=True)
-    for file in os.listdir("users"):
+    os.makedirs(USERS_DIR, exist_ok=True)
+    for file in os.listdir(USERS_DIR):
         if file.endswith(".json"):
             try:
-                with open(f"users/{file}", "r", encoding="utf-8") as f:
+                with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
                     if data.get("token") == request.token:
                         user_found = data
@@ -254,12 +348,16 @@ async def change_password(request: ChangePasswordRequest, req: Request = None):
     user_found["password"] = request.new_password
     user_found["token"] = new_token
     
-    # Сохраняем 
+    # Сохраняем
     try:
-        with open(f"users/{user_file}", "w", encoding="utf-8") as f:
+        with open(f"{USERS_DIR}/{user_file}", "w", encoding="utf-8") as f:
             json.dump(user_found, f, ensure_ascii=False, indent=2)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Ошибка сохранения данных: {str(e)}")
+    
+    add_to_history(user_data["id"], "/users/change-password", "PATCH",
+                   data={"password_changed": True},
+                   result={"status": "success", "new_token_created": True})
     
     return ChangePasswordResponse(
         message="Пароль успешно изменен",
@@ -271,10 +369,75 @@ async def change_password(request: ChangePasswordRequest, req: Request = None):
 async def kmp_search(request_data: KMPSearchRequest, req: Request = None):
     await signature_variant_4(req)
     
+    user_data = req.state.user_data
+    
     positions = kmp_search_all(request_data.text, request_data.pattern)
-    return KMPSearchResponse(
+    result = KMPSearchResponse(
         text=request_data.text,
         pattern=request_data.pattern,
         positions=positions,
         count=len(positions)
     )
+    
+    add_to_history(user_data["id"], "/kmp/search", "POST",
+                   data={"text": request_data.text[:50] + "..." if len(request_data.text) > 50 else request_data.text,
+                         "pattern": request_data.pattern},
+                   result={"positions_found": len(positions), "count": len(positions)})
+    
+    return result
+
+
+@app.get("/users/history")
+async def get_history(request: Request = None):
+    await signature_variant_4(request)
+    
+    user_data = request.state.user_data
+    user_id = user_data["id"]
+    
+    history = get_user_history(user_id)
+    
+    add_to_history(
+        user_id,
+        "/users/history",
+        "GET",
+        data={},
+        result={"history_entries": len(history)}
+    )
+    
+    return HistoryResponse(
+        user_id=user_id,
+        login=user_data.get("login"),
+        history=history,
+        count=len(history)
+    )
+
+
+@app.delete("/users/history")
+async def clear_history(request: Request = None):
+    await signature_variant_4(request)
+    
+    user_data = request.state.user_data
+    user_id = user_data["id"]
+    
+    cleared = clear_user_history(user_id)
+    
+    if cleared:
+        history_entry = {
+            "timestamp": datetime.now().isoformat(),
+            "endpoint": "/users/history",
+            "method": "DELETE",
+            "data": {"action": "clear_history"},
+            "result": {"status": "success", "history_cleared": True}
+        }
+        
+        history_file = f"{HISTORY_DIR}/history_{user_id}.json"
+        with open(history_file, "w", encoding="utf-8") as f:
+            json.dump([history_entry], f, ensure_ascii=False, indent=2)
+        
+        user_history[user_id] = [history_entry]
+        
+        return {"message": "История успешно очищена", "cleared": True}
+    
+    return {"message": "История уже пуста", "cleared": False}
+
+
