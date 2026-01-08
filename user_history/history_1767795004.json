@@ -1,0 +1,15 @@
+[
+  {
+    "timestamp": "2026-01-07T21:10:04.633325",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "AGsgfasajkk2121!",
+      "email": "AGsgfasajkk2121!"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  }
+]

@@ -1,0 +1,76 @@
+[
+  {
+    "timestamp": "2026-01-07T20:36:24.315772",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "TestUser123",
+      "email": "testuser123@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:36:24.334460",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser123"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:36:24.355142",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser123"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:36:24.374616",
+    "endpoint": "/kmp/search",
+    "method": "POST",
+    "data": {
+      "text": "привет мир, мир большой",
+      "pattern": "мир"
+    },
+    "result": {
+      "positions_found": 2,
+      "count": 2
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:36:24.389350",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser123"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:36:24.412544",
+    "endpoint": "/users/change-password",
+    "method": "PATCH",
+    "data": {
+      "password_changed": true
+    },
+    "result": {
+      "status": "success",
+      "new_token_created": true
+    }
+  }
+]

@@ -1,0 +1,66 @@
+[
+  {
+    "timestamp": "2026-01-07T20:33:31.563575",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "TTTestUser12345",
+      "email": "testuser12345@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:31.612644",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "TTTestUser67890",
+      "email": "testuser67890@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:31.649510",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TTTestUser67890"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:31.672124",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "UserKMPTest",
+      "email": "userkmptest@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:31.700545",
+    "endpoint": "/kmp/search",
+    "method": "POST",
+    "data": {
+      "text": "привет мир, мир большой",
+      "pattern": "мир"
+    },
+    "result": {
+      "positions_found": 2,
+      "count": 2
+    }
+  }
+]

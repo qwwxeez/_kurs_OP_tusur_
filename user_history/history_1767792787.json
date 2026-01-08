@@ -1,0 +1,78 @@
+[
+  {
+    "timestamp": "2026-01-07T20:33:07.666571",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "TestUser67890",
+      "email": "testuser67890@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:07.687467",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser67890"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:07.707754",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "UserKMPTest",
+      "email": "userkmptest@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:07.740042",
+    "endpoint": "/kmp/search",
+    "method": "POST",
+    "data": {
+      "text": "привет мир, мир большой",
+      "pattern": "мир"
+    },
+    "result": {
+      "positions_found": 2,
+      "count": 2
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:07.753849",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "UserChangePass",
+      "email": "userchangepass@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:33:07.788020",
+    "endpoint": "/users/change-password",
+    "method": "PATCH",
+    "data": {
+      "password_changed": true
+    },
+    "result": {
+      "status": "success",
+      "new_token_created": true
+    }
+  }
+]

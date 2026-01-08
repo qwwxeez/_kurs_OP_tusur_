@@ -1,0 +1,39 @@
+[
+  {
+    "timestamp": "2026-01-07T20:34:02.855635",
+    "endpoint": "/users/regist",
+    "method": "POST",
+    "data": {
+      "login": "TestUser67890",
+      "email": "testuser67890@example.com"
+    },
+    "result": {
+      "status": "success",
+      "token_created": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:34:02.876621",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser67890"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  },
+  {
+    "timestamp": "2026-01-07T20:34:15.035116",
+    "endpoint": "/users/auth",
+    "method": "POST",
+    "data": {
+      "login": "TestUser67890"
+    },
+    "result": {
+      "status": "success",
+      "auth": true
+    }
+  }
+]

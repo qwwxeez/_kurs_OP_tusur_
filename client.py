@@ -217,7 +217,13 @@ def kmp_search():
         return
     
     print("\n=== Поиск КМП ===")
-    text = input("Введите строку для поиска: ")
+    
+    while True:
+        text = input("Введите строку для поиска: ")
+        if text and text.strip():
+            break
+        print("Ошибка: строка не может быть пустой!")
+    
     pattern = input("Введите подстроку для поиска: ")
     
     request_data = {
@@ -343,7 +349,7 @@ def main_menu():
         print("1 - Регистрация")
         print("2 - Авторизация")
         print("3 - Изменить пароль")
-        print("4 - Поиск КМП (POST)")
+        print("4 - Алгоритм КМП")
         print("5 - Получить историю запросов")
         print("6 - Очистить историю запросов")
         print("0 - Выход")

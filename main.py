@@ -285,25 +285,36 @@ def create_user(user: User):
 @app.post("/users/auth")
 def auth_user(params: AuthUser):
     os.makedirs(USERS_DIR, exist_ok=True)
-
+    
+    user_found = False
+    password_correct = False
+    user_data = None
+    
     for file in os.listdir(USERS_DIR):
         if file.endswith(".json"):
             try:
                 with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
                     data = json.load(f)
-                    if data["login"] == params.login and data["password"] == params.password:
-                        add_to_history(data["id"], "/users/auth", "POST",
-                                     data={"login": params.login},
-                                     result={"status": "success", "auth": True})
-                        return AuthResponse(login=data["login"], token=data["token"])
+                    if data["login"] == params.login:
+                        user_found = True
+                        user_data = data
+                        if data["password"] == params.password:
+                            password_correct = True
+                        break
             except json.JSONDecodeError:
-                raise HTTPException(
-                    status_code=500,
-                    detail="Ошибка чтения базы пользователей"
-                )
-
-    raise HTTPException(status_code=401, detail="Неверный логин или пароль")
-
+                continue
+    
+    if not user_found:
+        raise HTTPException(status_code=401, detail="Пользователь не найден. Сначала зарегистрируйтесь.")
+    
+    if not password_correct:
+        raise HTTPException(status_code=401, detail="Неверный пароль")
+    
+    add_to_history(user_data["id"], "/users/auth", "POST",
+                   data={"login": params.login},
+                   result={"status": "success", "auth": True})
+    
+    return AuthResponse(login=user_data["login"], token=user_data["token"])
 
 @app.patch("/users/change-password")
 async def change_password(request: ChangePasswordRequest, req: Request = None):
@@ -370,6 +381,9 @@ async def kmp_search(request_data: KMPSearchRequest, req: Request = None):
     await signature_variant_4(req)
     
     user_data = req.state.user_data
+    
+    if not request_data.text or not request_data.text.strip():
+        raise HTTPException(status_code=400, detail="Текст не может быть пустой строкой")
     
     positions = kmp_search_all(request_data.text, request_data.pattern)
     result = KMPSearchResponse(
