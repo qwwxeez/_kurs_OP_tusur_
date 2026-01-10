@@ -1,5 +1,5 @@
 from fastapi import FastAPI, HTTPException, Request
-from typing import Union, Optional, List, Dict
+from typing import  Optional, List, Dict
 from pydantic import BaseModel
 import json
 import time
@@ -15,6 +15,7 @@ app = FastAPI()
 # Директории для хранения данных
 USERS_DIR = "users"
 HISTORY_DIR = "user_history"
+TEXTS_DIR = "user_text_kmp"  
 
 # Хранилище истории
 user_history: Dict[int, List[Dict]] = defaultdict(list)
@@ -76,6 +77,42 @@ class HistoryResponse(BaseModel):
     history: List[HistoryEntry]
     count: int
 
+
+# Модели для работы с текстами
+class AddTextRequest(BaseModel):
+    text: str
+    title: Optional[str] = "Без названия"
+
+
+class AddTextResponse(BaseModel):
+    message: str
+    text_id: str
+    title: str
+    text_preview: str
+
+
+class TextListItem(BaseModel):
+    text_id: str
+    title: str
+    preview: str
+    created_at: str
+    length: int
+
+
+class TextListResponse(BaseModel):
+    texts: List[TextListItem]
+    count: int
+
+
+class GetTextResponse(BaseModel):
+    text_id: str
+    title: str
+    text: str
+    created_at: str
+    length: int
+
+class Token(BaseModel):
+    token: str
 
 def validate_password(password: str):
     if len(password) < 10:
@@ -158,6 +195,29 @@ def clear_user_history(user_id: int):
         os.remove(history_file)
         return True
     return False
+
+
+def get_user_texts(user_id: int):
+    texts = []
+    
+    if not os.path.exists(TEXTS_DIR):
+        return texts
+    
+    try:
+        for filename in os.listdir(TEXTS_DIR):
+            if filename.startswith(f"text_{user_id}_"):
+                try:
+                    with open(os.path.join(TEXTS_DIR, filename), "r", encoding="utf-8") as f:
+                        text_data = json.load(f)
+                        if text_data.get("user_id") == user_id:
+                            texts.append(text_data)
+                except:
+                    continue
+    except Exception:
+        pass
+    
+    texts.sort(key=lambda x: x.get("created_at", ""), reverse=True)
+    return texts
 
 
 async def signature_variant_4(request: Request):
@@ -455,3 +515,151 @@ async def clear_history(request: Request = None):
     return {"message": "История уже пуста", "cleared": False}
 
 
+@app.post("/kmp/add-text")
+async def add_text_for_kmp(request_data: AddTextRequest, req: Request = None):
+    await signature_variant_4(req)
+    
+    user_data = req.state.user_data
+    user_id = user_data["id"]
+    
+    if not request_data.text or not request_data.text.strip():
+        raise HTTPException(status_code=400, detail="Текст не может быть пустой строкой")
+    
+    # Создаем директорию для текстов, если она не существует
+    os.makedirs(TEXTS_DIR, exist_ok=True)
+    
+    # Генерируем уникальный ID для текста
+    text_id = f"{user_id}_{int(time.time())}"
+    
+    # Формируем название файла
+    filename = f"text_{text_id}.json"
+    filepath = os.path.join(TEXTS_DIR, filename)
+    
+    # Данные для сохранения
+    text_data = {
+        "text_id": text_id,
+        "user_id": user_id,
+        "user_login": user_data.get("login"),
+        "title": request_data.title,
+        "text": request_data.text,
+        "created_at": datetime.now().isoformat(),
+        "length": len(request_data.text),
+        "preview": request_data.text[:100] + "..." if len(request_data.text) > 100 else request_data.text
+    }
+    
+    # Сохраняем текст в файл
+    try:
+        with open(filepath, "w", encoding="utf-8") as f:
+            json.dump(text_data, f, ensure_ascii=False, indent=2)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка сохранения текста: {str(e)}")
+    
+    # Добавляем в историю
+    add_to_history(user_id, "/kmp/add-text", "POST",
+                   data={"title": request_data.title, "text_length": len(request_data.text)},
+                   result={"status": "success", "text_id": text_id, "saved": True})
+    
+    return AddTextResponse(
+        message="Текст успешно сохранен",
+        text_id=text_id,
+        title=request_data.title,
+        text_preview=request_data.text[:50] + "..." if len(request_data.text) > 50 else request_data.text
+    )
+
+
+@app.get("/kmp/my-texts")
+async def get_my_texts(request: Request = None):
+    """Получить список текстов пользователя"""
+    await signature_variant_4(request)
+    
+    user_data = request.state.user_data
+    user_id = user_data["id"]
+    
+    texts_data = get_user_texts(user_id)
+    
+    # Формируем ответ
+    text_items = []
+    for text in texts_data:
+        text_items.append(TextListItem(
+            text_id=text.get("text_id", ""),
+            title=text.get("title", "Без названия"),
+            preview=text.get("preview", ""),
+            created_at=text.get("created_at", ""),
+            length=text.get("length", 0)
+        ))
+    
+    add_to_history(user_id, "/kmp/my-texts", "GET",
+                   data={},
+                   result={"texts_count": len(text_items)})
+    
+    return TextListResponse(
+        texts=text_items,
+        count=len(text_items)
+    )
+
+
+@app.get("/kmp/text/{text_id}")
+async def get_text_by_id(text_id: str, request: Request = None):
+    """Получить текст по ID"""
+    await signature_variant_4(request)
+    
+    user_data = request.state.user_data
+    user_id = user_data["id"]
+    
+    # Проверяем, что текст принадлежит пользователю
+    if not text_id.startswith(f"{user_id}_"):
+        raise HTTPException(status_code=403, detail="Доступ к тексту запрещен")
+    
+    filename = f"text_{text_id}.json"
+    filepath = os.path.join(TEXTS_DIR, filename)
+    
+    if not os.path.exists(filepath):
+        raise HTTPException(status_code=404, detail="Текст не найден")
+    
+    try:
+        with open(filepath, "r", encoding="utf-8") as f:
+            text_data = json.load(f)
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Ошибка чтения текста: {str(e)}")
+    
+    # Дополнительная проверка принадлежности
+    if text_data.get("user_id") != user_id:
+        raise HTTPException(status_code=403, detail="Текст не принадлежит пользователю")
+    
+    add_to_history(user_id, f"/kmp/text/{text_id}", "GET",
+                   data={"text_id": text_id},
+                   result={"title": text_data.get("title"), "length": text_data.get("length")})
+    
+    return GetTextResponse(
+        text_id=text_data.get("text_id", ""),
+        title=text_data.get("title", ""),
+        text=text_data.get("text", ""),
+        created_at=text_data.get("created_at", ""),
+        length=text_data.get("length", 0)
+    )
+
+@app.delete("/exit")
+def exit_program(data: Token):
+    """Простой выход из программы с записью в историю"""
+    
+    user_id = None
+    user_login = None
+    
+    os.makedirs(USERS_DIR, exist_ok=True)
+    for file in os.listdir(USERS_DIR):
+        if file.endswith(".json"):
+            try:
+                with open(f"{USERS_DIR}/{file}", "r", encoding="utf-8") as f:
+                    user_data = json.load(f)
+                    if user_data.get("token") == data.token:
+                        user_id = user_data["id"]
+                        user_login = user_data["login"]
+                        break
+            except:
+                continue
+    
+    if user_id is None:
+        raise HTTPException(status_code=404, detail="Пользователь не найден")
+    
+    
+    return {"message": "До новых встреч!\n"}
